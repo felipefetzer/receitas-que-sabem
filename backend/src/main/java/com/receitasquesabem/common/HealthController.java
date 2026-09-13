@@ -7,10 +7,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Único endpoint da Fase 0. Confirma três coisas de uma vez:
- * a API arrancou, a base de dados responde, e o Flyway já criou o schema.
- */
 @RestController
 @RequestMapping("/api/health")
 public class HealthController {
