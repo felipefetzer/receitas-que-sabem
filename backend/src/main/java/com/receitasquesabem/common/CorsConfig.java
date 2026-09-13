@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import java.util.Arrays;
 
 /**
  * O browser bloqueia pedidos de um site para outra origem, a menos que
@@ -19,8 +20,14 @@ public class CorsConfig implements WebMvcConfigurer {
 
     private final String[] allowedOrigins;
 
+    private static final Logger log = LoggerFactory.getLogger(CorsConfig.class);
+
     public CorsConfig(@Value("${app.cors.allowed-origins}") String allowedOrigins) {
-        this.allowedOrigins = allowedOrigins.split(",");
+        this.allowedOrigins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toArray(String[]::new);
+        log.info("CORS autorizado para: {}", Arrays.toString(this.allowedOrigins));
     }
 
     @Override
