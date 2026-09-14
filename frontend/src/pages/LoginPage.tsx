@@ -76,10 +76,12 @@ export default function LoginPage() {
           type="button"
           onClick={() => {
             setMode(mode === "login" ? "register" : "login");
+            setUsername("");
+            setPassword("");
             setError(null);
           }}
         >
-          {mode === "login" ? "Criar uma" : "Entrar"}
+          {mode === "login" ? "Criar conta" : "Entrar"}
         </button>
       </p>
 

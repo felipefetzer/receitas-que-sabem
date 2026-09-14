@@ -3,225 +3,167 @@
 > O nome é um trocadilho: receitas que *sabem* (conhecimento) e comida que *sabe bem* (sabor).
 
 Contexto do projeto para assistentes de IA e para o próprio autor.
-Se algo neste ficheiro contradisser o código, o ficheiro está desatualizado: corrigir aqui.
+Se algo aqui contradisser o código, este ficheiro está desatualizado: corrigir aqui.
+
+**Estado:** em produção, com login, receitas, ativação e lista de compras a funcionar.
+Fotos, avaliações e PWA ainda não estão implementados (ver secção 11).
 
 ---
 
 ## 1. O que é
 
-Aplicação pessoal/comunitária de receitas. Cada utilizador regista as suas receitas,
-consulta as dos outros, "ativa" as que vai cozinhar e daí sai automaticamente uma
-lista de compras com os ingredientes que lhe faltam.
+Aplicação de receitas. Cada utilizador regista as suas, consulta as dos outros, "ativa"
+as que vai cozinhar, e daí sai automaticamente uma lista de compras com o que lhe falta.
 
-Objetivo secundário: servir de projeto de aprendizagem e portefólio.
-Prioridade de utilização: **telemóvel** (a app é usada na cozinha).
+Prioridade de utilização: **telemóvel** — a app é usada na cozinha, muitas vezes com as
+mãos ocupadas. O autor está a aprender: explicar decisões é parte do trabalho, não um extra.
 
 ---
 
 ## 2. Stack
 
 ### Backend (`/backend`)
-- Java 21 (LTS)
-- Spring Boot 3.x
-- Spring Web (REST), Spring Security, Spring Data JPA, Spring Session JDBC
-- Bean Validation (`jakarta.validation`)
-- PostgreSQL
-- Flyway (migrations versionadas — o schema **nunca** é gerado por `ddl-auto`)
-- springdoc-openapi (documentação e contrato da API)
-- Maven
+- Java 21, Spring Boot 3.5.4, Maven
+- Spring Web, Spring Security, Spring Data JPA, **Spring Session JDBC**
+- Bean Validation
+- PostgreSQL (Neon em produção, contentor local em desenvolvimento)
+- Flyway — o schema **nunca** é gerado por `ddl-auto` (que está em `validate`)
 
 ### Frontend (`/frontend`)
-- React + TypeScript
-- Vite (build e dev server)
-- React Router (navegação)
-- TanStack Query (estado do servidor, cache, revalidação)
-- `vite-plugin-pwa` (manifest + service worker)
-- `@dnd-kit` (reordenação por arrastar de ingredientes e passos)
-- CSS simples ou Tailwind — a decidir na primeira UI
+- React + TypeScript, Vite
+- React Router
+- CSS simples num único `src/styles.css`, sem framework
+- Sem TanStack Query: o estado do servidor é gerido com `useState` + `useEffect`.
+  Se o número de ecrãs crescer, reavaliar.
 
 ### Infraestrutura
 - Um repositório, duas pastas, **dois deploys independentes**
-- **Backend:** Render, serviço web gratuito, via Dockerfile
-- **Base de dados:** Neon (Postgres serverless), plano gratuito — **não** o Postgres do Render,
-  que expira 30 dias após a criação e é apagado
-- **Frontend:** Cloudflare Pages (build estático)
-- `docker-compose.yml` na raiz para levantar Postgres + backend localmente
-
-Limitações aceites conscientemente: o serviço do Render adormece após 15 minutos sem tráfego
-e demora até um minuto a acordar; o Neon suspende a computação quando inativa. A primeira
-utilização do dia é lenta. O plano gratuito do Neon dá 0,5 GB, partilhados com as fotos —
-daí a compressão agressiva no cliente.
+- **Backend:** Render, serviço web gratuito, via Dockerfile. Adormece após 15 min
+  sem tráfego e demora até um minuto a acordar.
+- **Base de dados:** Neon (Postgres serverless), plano gratuito, 0,5 GB.
+  **Não** o Postgres do Render, que é apagado 30 dias após a criação.
+- **Frontend:** Cloudflare, publicado como **Worker** com assets estáticos
+  (`frontend/wrangler.jsonc`), não como Pages.
+- `docker-compose.yml` na raiz levanta Postgres + backend localmente.
 
 ---
 
 ## 3. Arquitetura
 
-**Isto não é uma arquitetura de microserviços — é um monólito modular com SPA.**
-Um backend, uma base de dados, um frontend que o consome. A separação em serviços
-independentes com bases de dados próprias não traz nada a este domínio e custa
-muito em complexidade operacional. O que o autor pretendia (API + cliente separados)
-é exatamente o que está descrito abaixo.
+**Monólito modular com SPA — não microserviços.** Um backend, uma base de dados,
+um frontend que a consome. A separação API/cliente é a que interessa aqui; dividir
+o backend em serviços autónomos só acrescentaria complexidade operacional.
 
 ```
-recipes-app/
+receitas-que-sabem/
 ├── backend/          # API Spring Boot
 ├── frontend/         # SPA React + Vite
 ├── docker-compose.yml
 └── CLAUDE.md
 ```
 
-### Organização do backend
-Pacotes **por funcionalidade**, não por camada técnica:
+Pacotes **por funcionalidade**, não por camada:
+`auth/`, `user/`, `recipe/`, `activation/`, `shoppinglist/`, `common/`.
 
-```
-com.<autor>.recipes
-├── auth/
-├── user/
-├── recipe/
-├── activation/       # receitas ativas + estado dos ingredientes
-├── shoppinglist/
-├── rating/
-└── common/           # exceções, config, tratamento de erros
-```
-
-Cada pacote tem o seu `Controller`, `Service`, `Repository`, entidades e DTOs.
-Entidades JPA **nunca** atravessam a fronteira do controller — a resposta é sempre DTO.
+Entidades JPA nunca atravessam a fronteira do controller — a resposta é sempre DTO.
+Os DTOs de cada área vivem numa classe agregadora (`RecipeDtos`, `ActivationDtos`).
 
 ---
 
 ## 4. Modelo de dados
 
+Migrations aplicadas: `V1__baseline.sql` (tabela `app_info`, usada pelo health check)
+e `V2__auth_e_receitas.sql` (tudo o resto).
+
 ```
-users
-  id, username (UNIQUE), password_hash, created_at
-
-recipes
-  id, user_id → users, name, notes (TEXT), created_at, updated_at
-  UNIQUE (user_id, name)
-
-ingredients
-  id, recipe_id → recipes, position, quantity (TEXT), unit (TEXT), item (TEXT)
-  UNIQUE (recipe_id, position)
-
-utensils
-  id, recipe_id → recipes, name
-
-preparation_sections
-  id, recipe_id → recipes, position, title
-  UNIQUE (recipe_id, position)
-
-preparation_steps
-  id, section_id → preparation_sections, position, instruction, duration_minutes (NULLABLE)
-  UNIQUE (section_id, position)
-
-recipe_photos
-  id, recipe_id → recipes, position (1 ou 2), content_type, data (BYTEA)
-  UNIQUE (recipe_id, position)
-
-ratings
-  id, recipe_id → recipes, user_id → users, category (FLAVOR|DIFFICULTY|PRICE), score (1..5)
-  UNIQUE (recipe_id, user_id, category)
-
-active_recipes
-  id, user_id → users, recipe_id → recipes, activated_at
-  UNIQUE (user_id, recipe_id)
-
-active_recipe_ingredients
-  id, active_recipe_id → active_recipes, ingredient_id → ingredients, available (BOOLEAN)
-  UNIQUE (active_recipe_id, ingredient_id)
+users                    id, username (UNIQUE), password_hash, created_at
+recipes                  id, user_id, name, notes, created_at, updated_at
+                         UNIQUE (user_id, name)
+ingredients              id, recipe_id, position, quantity, unit, item
+utensils                 id, recipe_id, name
+preparation_sections     id, recipe_id, position, title
+preparation_steps        id, section_id, position, instruction, duration_minutes (NULL)
+activations              id, user_id, recipe_id, activated_at
+                         UNIQUE (user_id, recipe_id)
+activation_ingredients   id, activation_id, ingredient_id, available
+                         UNIQUE (activation_id, ingredient_id)
+SPRING_SESSION           sessões do Spring Session (criadas na V2, não pelo Boot)
+SPRING_SESSION_ATTRIBUTES
 ```
 
 ### Decisão central: a lista de compras não é uma tabela
 
-A lista de compras é **derivada por query**, não armazenada:
+É **derivada por query**: os `activation_ingredients` com `available = false` das
+ativações do utilizador. Desativar uma receita apaga a ativação, o `ON DELETE CASCADE`
+leva o estado dos ingredientes, e os itens desaparecem da lista sozinhos. Não há código
+de sincronização, logo não há estado inconsistente possível.
 
-```sql
-SELECT ... FROM active_recipe_ingredients ari
-JOIN active_recipes ar ON ...
-WHERE ar.user_id = :userId AND ari.available = false
-```
-
-Consequência: desativar uma receita apaga a linha em `active_recipes`, o `ON DELETE CASCADE`
-leva os `active_recipe_ingredients`, e os itens desaparecem da lista sozinhos. Não existe
-código de sincronização a manter, logo não existe estado inconsistente possível.
-
-O estado "tenho / não tenho" pertence à **ativação**, não à receita — porque o utilizador A
+O estado "tenho / não tenho" pertence à **ativação**, não à receita — o utilizador A
 pode ativar uma receita do utilizador B, e cada um tem a sua despensa.
 
-`position` é um inteiro guardado explicitamente. A ordem **nunca** depende da ordem
-de inserção nem do `id`.
+`position` é um inteiro guardado explicitamente. A ordem nunca depende do `id`
+nem da ordem de inserção.
 
 ---
 
 ## 5. Regras de negócio
 
-Cada regra abaixo deve ter teste correspondente.
+Numeradas para servirem de checklist. **Ainda não existem testes automatizados** —
+é a maior dívida técnica atual.
 
 **Utilizadores**
-- R1. `username` é único em toda a aplicação.
-- R2. Password guardada com BCrypt. Nunca em texto simples, nunca em logs.
+- R1. `username` único em toda a aplicação.
+- R2. Password com BCrypt. Nunca em texto simples, nunca em logs.
 
 **Receitas**
-- R3. O nome da receita é único **por utilizador** (dois utilizadores podem ter "Bolo de Cenoura").
-- R4. O autor é sempre o utilizador autenticado. Nunca aceitar `userId` vindo do cliente.
-- R5. Só o autor pode editar ou apagar a sua receita.
-- R6. Todos os utilizadores autenticados podem **ler** todas as receitas.
-- R7. Máximo de 2 fotos por receita.
+- R3. Nome único **por utilizador** (dois utilizadores podem ter "Bolo de Cenoura").
+- R4. O autor é sempre o utilizador autenticado (`CurrentUser`). Nunca aceitar `userId` do cliente.
+- R5. Só o autor pode editar ou apagar.
+- R6. Qualquer utilizador autenticado pode ler todas as receitas.
 
-**Tempos de preparação**
+**Tempos**
 - R8. O tempo de uma secção é a soma dos `duration_minutes` dos seus passos.
-- R9. ≥ 60 minutos apresenta-se como "1h30", não "90 minutos".
-- R10. Se **algum** passo da secção não tiver tempo, prefixar com "aproximadamente".
-- R11. Se **nenhum** passo tiver tempo, não mostrar tempo nenhum.
-- R12. Formatação de tempo é responsabilidade do **frontend**. A API devolve minutos (inteiro)
-  e um booleano `partial`.
+- R9. ≥ 60 minutos apresenta-se como "1h30", não "90 min".
+- R10. Se algum passo da secção não tiver tempo, prefixar "aproximadamente".
+- R11. Se nenhum passo tiver tempo, não mostrar tempo.
+- R12. A formatação é do **frontend** (`src/lib/time.ts`); a API devolve
+  `totalMinutes` e o booleano `partial`.
 
 **Ativação**
-- R13. Máximo de **5** receitas ativas por utilizador. A 6ª tentativa devolve `409 Conflict`.
-- R14. Ao ativar, criar uma linha em `active_recipe_ingredients` por ingrediente,
-  com `available = false` (assume-se que falta tudo até o utilizador dizer o contrário).
+- R13. Máximo de **5** ativas por utilizador (`ActivationService.MAX_ACTIVE`). A 6ª dá `409`.
+- R14. Ao ativar, cria-se uma linha por ingrediente com `available = false`.
 - R15. Desativar apaga a ativação e, em cascata, o estado dos ingredientes.
 - R16. Qualquer utilizador pode ativar qualquer receita, incluindo as suas.
 
 **Lista de compras**
-- R17. Contém os ingredientes com `available = false` das receitas ativas do utilizador.
-- R18. Agrupada por receita, mantendo a ordem original dos ingredientes.
-  Itens iguais em receitas diferentes **não** são fundidos — quantidades em texto livre
-  não são somáveis de forma fiável ("1 colher" + "200g").
-- R19. Marcar a checkbox na lista de compras equivale a `available = true` na respetiva ativação.
+- R17. Contém os ingredientes com `available = false` das ativações do utilizador.
+- R18. Agrupada por receita, na ordem original dos ingredientes. Itens iguais em
+  receitas diferentes **não** são fundidos — "1 colher" e "200g" não somam.
+- R19. Riscar na lista equivale a `available = true` na ativação.
 - R20. Exportação para clipboard: texto simples, gerado no cliente.
-
-**Avaliações**
-- R21. Um voto por utilizador, por receita, por categoria. Votar de novo substitui o anterior.
-- R22. O autor **pode** avaliar a própria receita.
-- R23. A listagem mostra a média por categoria e o número de votos.
 
 ---
 
 ## 6. API
 
-Prefixo `/api`. JSON. Nomes de recursos no plural, em inglês.
+Prefixo `/api`. JSON. Recursos no plural, em inglês.
 
 ```
-POST   /api/auth/register            {username, password}
-POST   /api/auth/login               {username, password}
+GET    /api/health                     público
+GET    /api/auth/csrf                  público — devolve {token, headerName}
+POST   /api/auth/register              público
+POST   /api/auth/login                 público
 POST   /api/auth/logout
 GET    /api/auth/me
 
-GET    /api/recipes?scope=all|mine   → lista resumida (nome, autor, médias, foto de capa)
-GET    /api/recipes/{id}             → receita completa
+GET    /api/recipes?scope=all|mine
+GET    /api/recipes/{id}
 POST   /api/recipes
 PUT    /api/recipes/{id}
 DELETE /api/recipes/{id}
 
-POST   /api/recipes/{id}/photos      multipart
-DELETE /api/recipes/{id}/photos/{photoId}
-GET    /api/recipes/{id}/photos/{photoId}   → binário, com Cache-Control
-
-PUT    /api/recipes/{id}/ratings     {flavor?, difficulty?, price?}
-
 GET    /api/activations
-POST   /api/activations              {recipeId}
+POST   /api/activations                {recipeId}
 DELETE /api/activations/{id}
 PATCH  /api/activations/{id}/ingredients/{ingredientId}   {available}
 
@@ -229,117 +171,129 @@ GET    /api/shopping-list
 ```
 
 **Convenções**
-- Receita é criada e atualizada como **agregado completo** (ingredientes, secções, passos
-  e utensílios no mesmo payload). Não há endpoints individuais para sub-recursos —
-  o formulário de edição é sempre um ecrã inteiro.
-- Reordenar = enviar o agregado com os novos `position`.
-- Erros seguem `ProblemDetail` (RFC 7807) via `@RestControllerAdvice`.
-- `401` não autenticado, `403` sem permissão, `404` inexistente, `409` regra de negócio violada
-  (nome duplicado, 6ª receita ativa), `422` validação.
+- A receita é criada e atualizada como **agregado completo**: ingredientes, secções,
+  passos e utensílios no mesmo payload. Não há endpoints para sub-recursos.
+- Reordenar = enviar o agregado com a nova ordem; o servidor reatribui `position`
+  pelo índice do array.
+- Ao atualizar, o agregado é reescrito por inteiro (`clear()` + `orphanRemoval`).
+  Mais simples e mais seguro do que casar item a item o que mudou.
+- Erros seguem `ProblemDetail` (RFC 7807). O frontend lê sempre o campo `detail`.
+- `401` sem sessão, `403` sem permissão, `404` inexistente, `409` regra de negócio, `422` validação.
 
 ---
 
-## 7. Frontend
+## 7. Autenticação, CORS e CSRF
+
+A parte mais delicada do projeto. Frontend e backend estão em **domínios diferentes**,
+o que muda tudo.
+
+**Sessão.** Cookie `RECEITAS_SESSION`, HttpOnly, guardado no Postgres via Spring Session
+JDBC — assim sobrevive aos reinícios do Render. Em produção tem de ser
+`SameSite=None; Secure`, senão o browser não o envia entre domínios.
+
+**Variáveis de ambiente no Render** (sem elas o login falha em silêncio):
+```
+COOKIE_SAME_SITE=None
+COOKIE_SECURE=true
+CORS_ALLOWED_ORIGINS=https://receitas-que-sabem.titisdesucesso.workers.dev,http://localhost:5173
+DATABASE_URL=jdbc:postgresql://<pooler-host>/neondb?sslmode=require
+DATABASE_USER / DATABASE_PASSWORD
+```
+Localmente os valores por omissão (`Lax`, `secure=false`) chegam, porque
+`localhost:5173` e `localhost:8080` contam como o mesmo site.
+
+**CSRF — solução fora do habitual.** A receita comum é o JavaScript ler o token do
+cookie `XSRF-TOKEN`, mas isso exige que frontend e backend partilhem domínio.
+Aqui o token é obtido em `GET /api/auth/csrf` e enviado no cabeçalho; o cookie
+continua a ir junto e o servidor compara os dois. O `client.ts` trata disto sozinho
+e repete o pedido uma vez se o token tiver expirado.
+
+**Notas de configuração**
+- `CORS_ALLOWED_ORIGINS` é dividido por vírgulas e sofre `trim()`. Sem barra no fim —
+  o browser compara as origens carácter a carácter.
+- `VITE_API_URL` também leva `trim` de barras finais no cliente: uma barra a mais
+  produz `//api/health`, que não corresponde ao mapeamento `/api/**` e devolve 403.
+- O `HttpStatusEntryPoint` garante que um pedido não autenticado recebe `401`
+  em vez da página de login em HTML do Spring.
+
+---
+
+## 8. Frontend
 
 ### Rotas
 ```
-/login                  login e registo
-/                       menu principal
-/recipes                listagem + filtro (todas / minhas)
+/login                  login e registo (alterna no mesmo ecrã)
+/                       menu principal, com botão de sair
+/recipes                listagem + filtro (todas / só as minhas)
 /recipes/new            formulário de criação
-/recipes/:id            leitura; muda de modo se estiver ativa
-/recipes/:id/edit       formulário de edição
+/recipes/:id            leitura; muda de modo quando a receita está ativa
+/recipes/:id/edit       o mesmo formulário, pré-preenchido
 /shopping-list          lista de compras
 /about                  explicação do funcionamento
 ```
 
-### Notas de UI
-- O menu principal tem o botão de sair num canto.
-- No ecrã de leitura, se a receita estiver ativa, cada ingrediente ganha um toggle
-  ligado/desligado. (Os requisitos dizem "radio button", mas semanticamente é um
-  toggle/checkbox — são estados independentes por ingrediente.)
-- Alvos de toque com **mínimo 44px**: a app é usada com as mãos sujas, ao telemóvel.
-- Fotos são redimensionadas e comprimidas **no cliente** antes do upload
-  (máx. 1200px no lado maior, JPEG com qualidade ~0.8).
-- O ecrã "Sobre" explica a composição da receita, como criar/ver e o que é uma receita ativa.
+Tudo o que não seja `/login` passa pelo componente `Protected`.
 
-### PWA
-- Instalável (manifest com ícones e `display: standalone`).
-- Service worker faz cache do shell da aplicação e das receitas já visitadas,
-  para funcionarem sem rede.
-- Escritas offline **não** são suportadas na v1.
+### Decisões de UI
+- **Reordenação por setas ↑ ↓**, não por arrastar. Funciona melhor no telemóvel e
+  não traz dependências. Trocar por drag-and-drop é uma melhoria em aberto.
+- O que os requisitos chamam "radio button" está implementado como **toggle**:
+  cada ingrediente é independente, não são opções mutuamente exclusivas.
+- Na lista de compras, o item riscado **permanece visível** até sair do ecrã, para
+  não desaparecer debaixo do dedo no supermercado.
+- Alvos de toque com mínimo de 44px.
+- Serifa no corpo do texto; paleta quente. É um caderno, não um painel de controlo.
 
 ---
 
-## 8. Convenções de código
+## 9. Convenções de código
 
 **Java**
-- Nomes em inglês. Comentários e mensagens de commit em português.
-- DTOs como `record`. Entidades JPA como classes.
-- Construtor para injeção de dependências. Sem `@Autowired` em campos.
-- `@Transactional` no service, nunca no controller.
-- Testes: JUnit 5 + Testcontainers (Postgres real, não H2 — evita divergências de dialeto).
-- Sem `FetchType.EAGER`. Coleções carregadas com `JOIN FETCH` ou `@EntityGraph`.
+- Nomes em inglês. Comentários e commits em português.
+- DTOs como `record`, entidades como classes com construtor protegido para o JPA.
+- Injeção por construtor. Sem `@Autowired` em campos.
+- `@Transactional` no service, nunca no controller (exceto o `ShoppingListController`,
+  que só lê e não tem service próprio).
+- Sem `FetchType.EAGER`; usar `join fetch` onde é preciso.
 
 **TypeScript**
 - Componentes funcionais. Sem `any`.
-- Tipos da API **gerados a partir do OpenAPI** — nunca escritos à mão.
-- Chamadas à API isoladas em `src/api/`. Componentes não usam `fetch` diretamente.
-- Estado do servidor pertence ao TanStack Query. `useState` só para estado local de UI.
+- Todas as chamadas à API passam por `src/api/client.ts`. Nenhum componente usa `fetch`.
+- Tipos da API escritos à mão no `client.ts` — **não** gerados a partir de OpenAPI
+  (o springdoc não está instalado). Ao mudar um DTO no backend, atualizar o tipo aqui.
 
 **Geral**
-- Nada de segredos no repositório. Configuração por variáveis de ambiente.
-- Cada migration Flyway é imutável depois de aplicada. Correções fazem-se com nova migration.
-
----
-
-## 9. Decisões tomadas (e o que foi descartado)
-
-| Decisão | Escolha | Porquê |
-|---|---|---|
-| Arquitetura | Monólito modular + SPA | Microserviços não trazem benefício e multiplicam a complexidade de deploy |
-| Repositório | Único, duas pastas | Histórico e documentação num só sítio |
-| Deploy | Dois independentes | Frontend estático em CDN, não adormece, atualiza em segundos |
-| Autenticação | Cookie de sessão HttpOnly + Spring Session JDBC | Cookie inacessível a JavaScript; sessões sobrevivem a reinícios do serviço |
-| CSRF | Ativo, `CookieCsrfTokenRepository` | Obrigatório quando se usa cookies com `SameSite=None` |
-| JWT em localStorage | **Descartado** | Vulnerável a XSS e sem revogação; não simplifica nada aqui |
-| Fotos | `BYTEA` no Postgres | Evita um serviço externo; o disco dos hosts gratuitos é efémero. Reavaliar se passar de ~200MB |
-| Lista de compras | Derivada por query | Impossível ficar dessincronizada |
-| Frontend | React + TS + Vite | Padrão de mercado; Angular descartado por curva de aprendizagem |
-| Schema | Flyway | `ddl-auto` não é aceitável fora de brincadeiras |
-
-### Cross-origin
-Frontend e backend em domínios diferentes exigem:
-- CORS no backend com `allowCredentials(true)` e origem explícita (nunca `*`)
-- Cookie de sessão com `SameSite=None; Secure` (obriga a HTTPS nas duas pontas)
-- `credentials: 'include'` em todas as chamadas do frontend
-
-Se isto se revelar demasiado atrito, a alternativa é servir o frontend a partir do
-mesmo domínio via proxy da plataforma de CDN.
+- Nada de segredos no repositório. `.env.local` ignorado; `.env.production` pode ir,
+  porque só contém o URL público da API.
+- Migrations Flyway são imutáveis depois de aplicadas. Correções fazem-se com uma nova.
 
 ---
 
 ## 10. Pontos em aberto
 
-- [ ] Tailwind ou CSS simples
-- [ ] Pesquisa por nome de receita na listagem — provável, mas fora da v1
-- [ ] Limite de tamanho por foto a aplicar no servidor
+- [ ] **Configuração de build da Cloudflare está errada** — publica a pasta errada,
+  por isso o deploy do frontend é manual (`npm run build && npx wrangler deploy`).
+  Devia ser root `frontend`, build `npm run build`, deploy `npx wrangler deploy`.
+- [ ] **Sem testes automatizados.** As regras da secção 5 são a lista natural por onde começar.
+- [ ] Flyway avisa que não foi testado com PostgreSQL 18 (a Neon corre 18.6).
+  Funciona; atualizar a dependência quando for conveniente.
+- [ ] Sem paginação nem pesquisa na listagem de receitas.
+- [ ] Sem `updated_at` a ser mostrado no interface.
+- [ ] O ecrã de leitura faz dois pedidos quando a receita está ativa
+  (`/recipes/{id}` e `/activations`). Dá para resolver devolvendo a disponibilidade
+  no próprio detalhe.
 
 ---
 
-## 11. Fases
+## 11. Por construir
 
-**Fase 0 — Esqueleto no ar.** Projetos criados, Postgres ligado, um endpoint de saúde,
-um ecrã que o consome, os dois deploys a funcionar. Objetivo: eliminar cedo o risco
-de infraestrutura, antes de existir funcionalidade.
+Por ordem provável, mas nada está decidido:
 
-**Fase 1 — Autenticação.** Registo, login, logout, sessão persistente, rotas protegidas.
-
-**Fase 2 — Receitas.** CRUD completo com o agregado, listagem com filtro, ecrã de leitura.
-
-**Fase 3 — Ativação e lista de compras.** Limite de 5, estado dos ingredientes,
-lista derivada, cópia para clipboard.
-
-**Fase 4 — Fotos e avaliações.**
-
-**Fase 5 — PWA.** Manifest, service worker, cache offline, afinação para telemóvel.
+- **Fotos** — até 2 por receita, em `BYTEA` no Postgres, comprimidas no cliente
+  (máx. 1200px, JPEG ~0.8) antes do upload multipart. O disco do Render é efémero,
+  por isso guardar ficheiros nele não é opção; e os 0,5 GB da Neon são partilhados
+  com o resto dos dados.
+- **Avaliações** — sabor, dificuldade e preço, 5 estrelas, um voto por utilizador
+  por categoria, com média e contagem na listagem. O autor pode avaliar a própria receita.
+- **PWA** — manifest, service worker, cache das receitas visitadas para funcionar
+  offline na cozinha. Escritas offline não estão previstas.

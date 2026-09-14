@@ -40,6 +40,80 @@ button, input, textarea, select { font: inherit; }
 .topbar h1 { font-size: 1.4rem; margin: 0; }
 .topbar a { color: var(--muted); text-decoration: none; }
 
+/* Menu lateral */
+.menu-toggle {
+  min-width: 44px;
+  padding: 0.5rem 0.6rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  flex: none;
+}
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(42, 33, 24, 0.45);
+  z-index: 20;
+}
+
+.drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(17rem, 82vw);
+  background: var(--card);
+  border-right: 1px solid var(--line);
+  padding: 1rem 0.75rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  animation: drawer-in 0.18s ease-out;
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer { animation: none; }
+}
+
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.5rem 0.75rem;
+  margin-bottom: 0.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+}
+.drawer-link:hover { background: var(--paper); }
+.drawer-link.on { background: var(--accent-soft); color: var(--accent); }
+
+/* O "Sair" é um <button> mas tem de ler-se como os restantes itens. */
+.drawer-link.as-button {
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  margin-top: auto;
+  color: var(--danger);
+}
+.drawer-link.as-button:hover { background: var(--paper); border: none; }
+
 h2 { font-size: 1.15rem; margin: 1.75rem 0 0.5rem; }
 h3 { font-size: 1rem; margin: 1.25rem 0 0.35rem; }
 
@@ -107,6 +181,9 @@ label { display: block; margin-bottom: 0.25rem; font-size: 0.9rem; color: var(--
 
 .filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
 .filters button.on { background: var(--accent-soft); border-color: var(--accent); }
+
+/* empurra o botão para a direita, deixando os filtros à esquerda */
+.push-right { margin-left: auto; }
 
 .badge {
   font-size: 0.75rem;

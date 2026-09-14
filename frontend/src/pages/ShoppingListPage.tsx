@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type ShoppingGroup } from "../api/client";
 import { formatIngredient } from "../lib/time";
+import SideMenu from "../components/SideMenu";
 
 export default function ShoppingListPage() {
   const [groups, setGroups] = useState<ShoppingGroup[]>([]);
@@ -56,7 +57,10 @@ export default function ShoppingListPage() {
   return (
     <div className="page">
       <div className="topbar">
-        <h1>Lista de compras</h1>
+        <div className="row">
+          <SideMenu />
+          <h1>Lista de compras</h1>
+        </div>
         <Link to="/">Voltar</Link>
       </div>
 

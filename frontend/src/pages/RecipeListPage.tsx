@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, type RecipeSummary } from "../api/client";
+import SideMenu from "../components/SideMenu";
 
 export default function RecipeListPage() {
   const [scope, setScope] = useState<"all" | "mine">("all");
@@ -31,7 +32,10 @@ export default function RecipeListPage() {
   return (
     <div className="page">
       <div className="topbar">
-        <h1>Receitas</h1>
+        <div className="row">
+          <SideMenu />
+          <h1>Receitas</h1>
+        </div>
         <Link to="/">Voltar</Link>
       </div>
 
@@ -41,6 +45,9 @@ export default function RecipeListPage() {
         </button>
         <button className={scope === "mine" ? "on" : ""} onClick={() => setScope("mine")}>
           Só as minhas
+        </button>
+        <button className="primary push-right" onClick={() => navigate("/recipes/new")}>
+          + Criar receita
         </button>
       </div>
 

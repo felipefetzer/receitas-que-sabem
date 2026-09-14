@@ -1,10 +1,14 @@
 import { Link } from "react-router-dom";
+import SideMenu from "../components/SideMenu";
 
 export default function AboutPage() {
   return (
     <div className="page">
       <div className="topbar">
-        <h1>Sobre</h1>
+        <div className="row">
+          <SideMenu />
+          <h1>Sobre</h1>
+        </div>
         <Link to="/">Voltar</Link>
       </div>
 

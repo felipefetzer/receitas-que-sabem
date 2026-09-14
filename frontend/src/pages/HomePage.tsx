@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import SideMenu from "../components/SideMenu";
 
 export default function HomePage() {
   const { user, logout } = useAuth();
@@ -13,9 +14,12 @@ export default function HomePage() {
   return (
     <div className="page">
       <div className="topbar">
-        <div>
-          <h1>Receitas que Sabem</h1>
-          <p className="muted small" style={{ margin: 0 }}>Olá, {user?.username}</p>
+        <div className="row">
+          <SideMenu />
+          <div>
+            <h1>Receitas que Sabem</h1>
+            <p className="muted small" style={{ margin: 0 }}>Olá, {user?.username}</p>
+          </div>
         </div>
         <button onClick={sair}>Sair</button>
       </div>

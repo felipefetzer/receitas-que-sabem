@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Activation, type RecipeDetail } from "../api/client";
 import { formatDuration, formatIngredient } from "../lib/time";
+import SideMenu from "../components/SideMenu";
 
 export default function RecipeViewPage() {
   const { id } = useParams();
@@ -74,7 +75,10 @@ export default function RecipeViewPage() {
   return (
     <div className="page">
       <div className="topbar">
-        <h1>{recipe.name}</h1>
+        <div className="row">
+          <SideMenu />
+          <h1>{recipe.name}</h1>
+        </div>
         <Link to="/recipes">Voltar</Link>
       </div>
       <p className="muted small" style={{ marginTop: "-1rem" }}>por {recipe.authorUsername}</p>
